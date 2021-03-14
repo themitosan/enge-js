@@ -8,19 +8,7 @@ var loading = 0;
 var renderer = undefined;
 var canvas = undefined;
 var emulationTime = 0.0;
-var pads = undefined;
 var context = undefined;
-
-function readStorageStream(item, cb) {
-  const base64text = localStorage.getItem(item);
-  if (base64text) {
-    const arrayBuffer = Base64.decode(base64text);
-    cb(arrayBuffer);
-  }
-  else {
-    cb(null);
-  }
-}
 
 var abort = function() {
   console.error(Array.prototype.slice.call(arguments).join(' '));
@@ -46,7 +34,6 @@ var context = window.context= {
   timeStamp: 0,
   realtime: 0,
   emutime: 0,
-  jstime: 0
 };
 
 const psx = {
@@ -137,9 +124,6 @@ joy.eventIRQ = psx.addEvent(0, joy.completeIRQ.bind(joy));
 mdc.event = psx.addEvent(0, mdc.complete.bind(mdc));
 
 dot.event = psx.addEvent(0, dot.complete.bind(dot));
-// rc0.event = psx.addEvent(0, rc0.complete.bind(rc0));
-// rc1.event = psx.addEvent(0, rc1.complete.bind(rc1));
-// rc2.event = psx.addEvent(0, rc2.complete.bind(rc2));
 
 let frameEvent = psx.addEvent(0, endMainLoop);
 let endAnimationFrame = false;
@@ -156,29 +140,30 @@ function mainLoop(stamp) {
 
   context.realtime += delta;
 
-  let diffTime = context.emutime - context.realtime;
-  const timeToEmulate = 10.0 - diffTime;
+  let diffTime = context.realtime - context.emutime;
+  const timeToEmulate = diffTime;
 
   const totalCycles = timeToEmulate * (768*44.100);
-  let jstime = performance.now();
 
   let entry = getCacheEntry(cpu.pc);
+  if (!entry) return abort('invalid pc')
 
   endAnimationFrame = false;
   psx.setEvent(frameEvent, +totalCycles);
+  handleGamePads();
   while (!endAnimationFrame) {
     if (!entry.code) {
-      entry.code = compileBlock(entry);//.bind(null);
+      entry.code = compileBlock(entry);
     }
     entry = entry.code(psx);
+    // let next = entry.code(psx);
+    // if (!next) debugger;
+    // entry = next;
   }
   cpu.pc = entry.pc;
 
-  jstime = performance.now() - jstime;
-  context.jstime += jstime;
   // correct the emulation time accourding to the psx.clock
   context.emutime =  psx.clock / (768*44.100);
-  // console.log(context.jstime/context.emutime);
 }
 
 function bios() {
@@ -188,7 +173,7 @@ function bios() {
   const $ = psx;
   while (entry.pc !== 0x00030000) {
     if (!entry.code) {
-      entry.code = compileBlock(entry);//.bind(null);
+      entry.code = compileBlock(entry);
     }
     entry = entry.code(psx);
   }
@@ -227,8 +212,8 @@ function loadFileData(arrayBuffer) {
   if ((data[0] & 0xffff) === 0x5350) { // PS
     cpu.pc = data.getInt32(0x10);
     cpu.gpr[28] = data.getInt32(0x14);
-    if (data.getInt32(0x30)) cpu.gpr[29] = data.getInt32(0x30);
-    if (data.getInt32(0x30)) cpu.gpr[30] = data.getInt32(0x30);
+    cpu.gpr[29] = data.getInt32(0x30) ? data.getInt32(0x30) : 0x001ffff0;
+    cpu.gpr[30] = data.getInt32(0x30) ? data.getInt32(0x30) : 0x001ffff0;
     cpu.gpr[31] = cpu.pc;
     console.log('init-pc  : $', hex(cpu.pc >>> 0));
     console.log('init-gp  : $', hex(cpu.gpr[28] >>> 0));
@@ -240,22 +225,12 @@ function loadFileData(arrayBuffer) {
     console.log('data-addr: $', hex(data.getInt32(0x20) >>> 0));
     console.log('data-size: $', hex(data.getInt32(0x24) >>> 0));
 
-    // for (let i = 0; i < 0x40;i+=4) {
-    //   console.log(hex(data.getInt32(i) >>> 0))
-    // }
-
     var textSegmentOffset = data.getInt32(0x18);
-    var fileContentLength = data.getInt32(0x1C);
+    var fileContentLength = view8.length;
     for (var i = 0; i < fileContentLength; ++i) {
       map8[(textSegmentOffset & 0x001fffff) >>> 0] = view8[(0x800 + i) >>> 0];
-      // map.setInt8(textSegmentOffset & 0x1FFFFF, data.getInt8(0x800 + i));
       textSegmentOffset++;
     }
-    // psx.addEvent(44100*768*60, (self, clock) => {
-    //   running = false;
-    //   spu.silence();
-    //   throw 'stoped';
-    // });
     running = true;
   }
   else if (data[0] === 0xffffff00) { // ISO
@@ -313,10 +288,9 @@ function loadFileData(arrayBuffer) {
         tracks.push({id, begin, end, audio:true});
       }
     }
+    cdr.setCdImage(data);
     cdr.setTOC(tracks);
 
-    cdr.hasCdFile = true;
-    cdr.cdImage = data;
     running = true;
   }
   else if (data[0] === 0x0000434d) { // MEMCARD
@@ -328,12 +302,9 @@ function loadFileData(arrayBuffer) {
     }
   }
   else if (arrayBuffer.byteLength === 524288) {
-    const base64text = Base64.encode(arrayBuffer);
-    localStorage.setItem('bios', base64text);
+    writeStorageStream('bios', arrayBuffer);
     for (var i = 0; i < 0x00080000; i += 4) {
       map[(0x01c00000 + i) >>> 2] = data[i >>> 2];
-      // map[(0x01c00000 + i) >>> 2] = data.getInt32(i);
-      // map.setInt32(0x01c00000 + i, data.getInt32(i));
     }
     bios();
     let header = document.querySelector('span.nobios');
@@ -351,7 +322,7 @@ function handleFileSelect(evt) {
   evt.stopPropagation();
   evt.preventDefault();
 
-  var fileList = evt.dataTransfer.files;
+  const fileList = evt.dataTransfer ? evt.dataTransfer.files : evt.target.files;
 
   var output = [];
   for (var i = 0, f; f = fileList[i]; i++) {
@@ -370,12 +341,24 @@ function init() {
 
   document.addEventListener('dragover', handleDragOver, false);
   document.addEventListener('drop', handleFileSelect, false);
+  document.getElementById('file').addEventListener('change', handleFileSelect, false);
+
+  settings.updateQuality();
+
+  document.getElementById('quality').addEventListener('click', evt => {
+    settings.updateQuality(true);
+
+    evt.stopPropagation();
+    evt.preventDefault();
+    return false;
+  });
+
 
   mainLoop(performance.now());
 
   renderer = new WebGLRenderer(canvas);
 
-  window.addEventListener("dblclick", function(e) {
+  canvas.addEventListener("dblclick", function(e) {
     running = !running;
     if (!running) {
       spu.silence();
@@ -429,8 +412,10 @@ function init() {
     if (e.keyCode === 123) return; //f12
     if (e.keyCode === 116) return; //f5
 
-    if (e.key === 'F1' && e.ctrlKey) renderer.setMode('disp');
-    if (e.key === 'F2' && e.ctrlKey) renderer.setMode('vram');
+    if (e.key === '1' && e.ctrlKey) renderer.setMode('disp');
+    if (e.key === '2' && e.ctrlKey) renderer.setMode('draw');
+    if (e.key === '3' && e.ctrlKey) renderer.setMode('clut8');
+    if (e.key === '4' && e.ctrlKey) renderer.setMode('clut4');
 
     e.preventDefault();
   }, false);

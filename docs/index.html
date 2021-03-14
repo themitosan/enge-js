@@ -4,10 +4,11 @@
     <title>eNGE</title>
     <link rel="stylesheet" type="text/css" href="index.css">
 
+    <script type="text/javascript" src="base64.js"></script>
+    <script type="text/javascript" src="psx-core/config.js"></script>
+
     <script type="text/javascript" src="psx-renderers/webgl2-utils.js"></script>
     <script type="text/javascript" src="psx-renderers/webGlHQ-old.js"></script>
-
-    <script type="text/javascript" src="base64.js"></script>
 
     <script type="text/javascript" src="psx-core/memory.js"></script>
     <script type="text/javascript" src="psx-core/enge.js"></script>
@@ -19,7 +20,8 @@
     <script type="text/javascript" src="psx-core/macroBlockDecoder.js"></script>
     <script type="text/javascript" src="psx-core/serialPorts.js"></script>
     <script type="text/javascript" src="psx-core/soundProcessingUnit.js"></script>
-    <script type="text/javascript" src="psx-core/rootCounters-new.js"></script>
+    <script type="text/javascript" src="psx-core/rootCounters.js"></script>
+    <script type="text/javascript" src="psx-core/gamepad.js"></script>
 
     <script type="text/javascript" src="index.js"></script>
 
@@ -158,9 +160,20 @@
     </script>
   </head>
   <body onload="init();">
+    <input type="file" id="file_loader" style="position: relative; z-index: 9999"></input>
     <header><span class="nobios">eNGE</span></header>
     <canvas id="display"></canvas>
-    <nav></nav>
+    <nav>
+      <div id="file">
+        <label for="file-upload" class="custom-file-upload"></label>
+        <input id="file-upload" type="file"/>
+      </div>
+      <div id="gamepad">
+      </div>
+      <span></span>
+      <div id="quality">
+      </div>
+    </nav>
   </body>
 </html>
 

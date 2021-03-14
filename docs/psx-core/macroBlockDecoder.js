@@ -141,7 +141,7 @@ var video = {
           let val = (iqtab[iqoff + k] * q * dc) >> 3;
           blk[o + this.zscan[k]] = val;
         }
-        if (k >= 63) break;
+        if (k > 63) break;
       }
 
       this.icdt(blk, o);
@@ -292,7 +292,7 @@ var mdc = {
   },
 
   wr32r1824: function(data) {
-    console.log('wr32r1824:', hex(data));
+    // console.log('wr32r1824:', hex(data));
 
     if (data & 0x80000000) {
       mdc.r1820 = 0;
